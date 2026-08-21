@@ -1,2 +1,1 @@
-# AIWorkbench
-ai
+look AIWorkbench/TUTORIAL.md
