@@ -1,0 +1,5 @@
+PyQt6>=6.6.0
+cryptography>=42.0.0
+requests>=2.31.0
+mcp>=1.0.0
+fastmcp>=2.0.0
