@@ -27,22 +27,19 @@ ACCENT = "#7b8cff"
 
 
 def _is_system_dark() -> bool:
-    """检测系统是否为深色模式。"""
+    """检测当前界面是否为深色：优先使用应用已选主题，未设置时回退系统主题。"""
     try:
-        from PyQt6.QtGui import QPalette
-        app = __import__("PyQt6.QtWidgets", fromlist=["QApplication"]).QApplication
-        if app.instance() is not None:
-            palette = app.palette()
-            bg = palette.color(QPalette.ColorRole.Window)
-            return bg.lightness() < 128
+        from . import theme
+
+        return not theme.current().light
     except Exception:
         pass
-    # Windows 注册表检测
+    # 回退：Windows 系统深色模式检测
     try:
         import winreg
         key = winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Themes\\Personalize",
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
         )
         val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
         winreg.CloseKey(key)

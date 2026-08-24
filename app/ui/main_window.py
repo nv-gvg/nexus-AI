@@ -22,7 +22,6 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QSystemTrayIcon,
-    QTabWidget,
     QMenu,
     QVBoxLayout,
     QWidget,
@@ -40,6 +39,7 @@ from .mobius import make_app_icon, make_logo
 from .skill_panel import SkillPanel
 from .space_panel import SpacePanel
 from .widgets import show_toast
+from .workflow_panel import WorkflowPanel
 
 
 class MainWindow(QMainWindow):
@@ -70,10 +70,11 @@ class MainWindow(QMainWindow):
         row.setSpacing(14)
 
         # 莫比乌斯环 logo
-        logo = QLabel()
-        logo.setPixmap(make_logo(48))
-        logo.setFixedSize(48, 48)
-        row.addWidget(logo)
+        self.header_logo = QLabel()
+        self.header_logo.setObjectName("appLogo")
+        self.header_logo.setPixmap(make_logo(48))
+        self.header_logo.setFixedSize(48, 48)
+        row.addWidget(self.header_logo)
 
         # 品牌名 + 标语
         titles = QVBoxLayout()
@@ -94,50 +95,109 @@ class MainWindow(QMainWindow):
         row.addWidget(version)
 
         row.addStretch(1)
+        return header
 
-        # 快捷操作按钮
-        for label, slot in [
-            ("\u65b0\u5efa\u7a7a\u95f4", self.new_space),
-            ("\u65b0\u5efa\u5bf9\u8bdd", self.new_conversation),
-            ("\u914d\u7f6e", self.open_config),
-        ]:
-            btn = QPushButton(label)
-            if label == "\u914d\u7f6e":
-                btn.setObjectName("accentBtn")
+    def _build_nav_rail(self, splitter: QSplitter) -> QWidget:
+        """左侧竖排导航栏：对话 / 记忆图谱 / 技能 / 工作流 / 设置。"""
+        rail = QFrame()
+        rail.setObjectName("navRail")
+        rail.setFixedWidth(72)
+        col = QVBoxLayout(rail)
+        col.setContentsMargins(8, 14, 8, 14)
+        col.setSpacing(10)
+
+        self._nav_buttons: list[QPushButton] = []
+        nav_items = [
+            ("\u25cc", "对话", lambda: self._show_chat()),
+            ("\u2022", "记忆图谱", lambda: self._open_graph()),
+            ("\u2630", "技能", lambda: self._open_skill()),
+            ("\u21bb", "工作流", lambda: self._open_workflow()),
+            ("\u2699", "设置", lambda: self._open_settings()),
+        ]
+        for icon, tip, slot in nav_items:
+            btn = QPushButton(icon)
+            btn.setObjectName("navBtn")
+            btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(slot)
-            row.addWidget(btn)
+            col.addWidget(btn)
+            self._nav_buttons.append(btn)
 
-        # GitHub 链接
-        github_btn = QPushButton("GitHub")
-        github_btn.setObjectName("iconBtn")
-        github_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        github_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(paths.GITHUB_REPO)))
-        row.addWidget(github_btn)
+        col.addStretch(1)
+        self._set_nav_active(0)
+        return rail
 
-        return header
+    # ------------------------------------------------------------------ 导航动作
+    def _show_chat(self) -> None:
+        self._set_nav_active(0)
+        sizes = self.splitter.sizes()
+        if sizes:
+            self.splitter.setSizes([72, 200, 260, sizes[3] if len(sizes) > 3 else 660])
+
+    def _open_graph(self) -> None:
+        self._set_nav_active(1)
+        self._open_panel_dialog("记忆图谱", self.graph_view)
+
+    def _open_skill(self) -> None:
+        self._set_nav_active(2)
+        self._open_panel_dialog("技能", self.skill_panel)
+
+    def _open_workflow(self) -> None:
+        self._set_nav_active(3)
+        self._open_panel_dialog("工作流", self.workflow_panel)
+
+    def _open_settings(self) -> None:
+        self._set_nav_active(4)
+        self.open_config()
+
+    def _open_panel_dialog(self, title: str, view: QWidget) -> None:
+        """把图谱/技能/工作流放在独立窗口打开，首次创建后复用。"""
+        key = f"_panel_dlg_{id(view)}"
+        dlg = getattr(self, key, None)
+        if dlg is None:
+            dlg = QDialog(self)
+            dlg.setWindowTitle(title)
+            dlg.resize(920, 640)
+            lay = QVBoxLayout(dlg)
+            lay.setContentsMargins(8, 8, 8, 8)
+            lay.addWidget(view)
+            setattr(self, key, dlg)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def _set_nav_active(self, index: int) -> None:
+        for idx, btn in enumerate(self._nav_buttons):
+            btn.setProperty("active", "true" if idx == index else "false")
+            btn.setChecked(idx == index)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
 
     # ------------------------------------------------------------------ 布局
     def _build_panels(self) -> None:
         self.space_panel = SpacePanel(self.db)
+        self.space_panel.setObjectName("sidePanel")
         self.conversation_list = ConversationListView(self.db)
+        self.conversation_list.setObjectName("sidePanel")
         self.chat_view = ChatView(self.db)
         self.graph_view = GraphView(self.db)
         self.skill_panel = SkillPanel()
-
-        right_tabs = QTabWidget()
-        right_tabs.addTab(self.graph_view, "记忆图谱")
-        right_tabs.addTab(self.skill_panel, "技能")
+        self.workflow_panel = WorkflowPanel(self.db)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.nav_rail = self._build_nav_rail(splitter)
+        splitter.addWidget(self.nav_rail)
         splitter.addWidget(self.space_panel)
         splitter.addWidget(self.conversation_list)
         splitter.addWidget(self.chat_view)
-        splitter.addWidget(right_tabs)
-        splitter.setSizes([180, 240, 560, 320])
-        splitter.setStretchFactor(2, 1)
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        splitter.setSizes([56, 210, 250, 700])
+        splitter.setStretchFactor(3, 1)
+        self.splitter = splitter
 
         central = QWidget()
+        central.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -145,7 +205,7 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter, 1)
         # 状态栏
         self.status_bar = self.statusBar()
-        self.status_bar.showMessage("\u221e AIWorkbench \u2014 \u51c6\u5907\u5c31\u7eea")
+        self.status_bar.showMessage("\u221e Nexus-AI \u2014 \u51c6\u5907\u5c31\u7eea")
         self.setCentralWidget(central)
 
         # 信号
@@ -156,6 +216,7 @@ class MainWindow(QMainWindow):
         self.conversation_list.conversation_created_signal.connect(self._on_conversation_created)
         self.chat_view.conversation_created.connect(self._on_chat_created_conversation)
         self.chat_view.graph_refresh_requested.connect(self.graph_view.refresh)
+        self.chat_view.graph_refresh_requested.connect(self.workflow_panel.refresh)
         self.graph_view.node_clicked.connect(self._on_node_clicked)
 
     def _build_menu(self) -> None:
@@ -174,6 +235,11 @@ class MainWindow(QMainWindow):
         space_menu.addAction("新建空间", QKeySequence("Ctrl+N"), self.new_space)
         space_menu.addAction("新建对话", QKeySequence("Ctrl+Shift+N"), self.new_conversation)
 
+        view_menu = menubar.addMenu("查看(&V)")
+        view_menu.addAction("记忆图谱", self._open_graph)
+        view_menu.addAction("技能", self._open_skill)
+        view_menu.addAction("工作流", self._open_workflow)
+
         edit_menu = menubar.addMenu("编辑(&E)")
         edit_menu.addAction("保存/导出当前对话", QKeySequence("Ctrl+S"), self.save_conversation)
         edit_menu.addAction("搜索当前对话", QKeySequence("Ctrl+F"), self.search_current)
@@ -181,6 +247,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction("打开配置面板", QKeySequence("Ctrl+,"), self.open_config)
 
         help_menu = menubar.addMenu("帮助(&H)")
+        help_menu.addAction("GitHub", lambda: QDesktopServices.openUrl(QUrl(paths.GITHUB_REPO)))
         help_menu.addAction("关于", self.show_about)
 
     def _build_shortcuts(self) -> None:
@@ -270,12 +337,20 @@ class MainWindow(QMainWindow):
         self.conversation_list.refresh(space_id, conv["id"])
         self.chat_view.load_conversation(space_id, conv["id"])
 
+    def _default_download(self, filename: str) -> str:
+        """基于配置的下载目录拼接默认保存路径。"""
+        import os
+
+        return os.path.join(self.config.download_dir(), filename)
+
     def save_conversation(self) -> None:
         conv_id = self.chat_view.conversation_id
         if not conv_id:
             show_toast(self, "请先选择对话", success=False)
             return
-        path, _ = QFileDialog.getSaveFileName(self, "导出对话", "conversation.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出对话", self._default_download("conversation.json"), "JSON (*.json)"
+        )
         if path:
             data = self.db.list_messages(conv_id)
             with open(path, "w", encoding="utf-8") as f:
@@ -285,6 +360,18 @@ class MainWindow(QMainWindow):
     def open_config(self) -> None:
         dialog = ConfigDialog(self)
         dialog.exec()
+        # 配置（如主题）改动后刷新依赖内联样式的界面
+        self.refresh_theme()
+
+    def refresh_theme(self) -> None:
+        """主题切换后刷新主界面的内联样式元素。"""
+        if getattr(self, "header_logo", None) is not None:
+            self.header_logo.setPixmap(make_logo(48))
+        self.setWindowIcon(make_app_icon())
+        if getattr(self, "tray", None) is not None:
+            self.tray.setIcon(make_app_icon())
+        self.chat_view.refresh_theme()
+        self.graph_view.refresh_theme()
 
     def show_about(self) -> None:
         AboutDialog(self).exec()
@@ -294,7 +381,9 @@ class MainWindow(QMainWindow):
         if not space_id:
             show_toast(self, "请先选择空间", success=False)
             return
-        path, _ = QFileDialog.getSaveFileName(self, "导出空间", "space.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出空间", self._default_download("space.json"), "JSON (*.json)"
+        )
         if path:
             backup.export_space(self.db, space_id, path)
             show_toast(self, "空间已导出")
@@ -307,7 +396,9 @@ class MainWindow(QMainWindow):
             show_toast(self, "空间已导入")
 
     def export_all(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "整体备份", "aiworkbench_backup.zip", "ZIP (*.zip)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "整体备份", self._default_download("aiworkbench_backup.zip"), "ZIP (*.zip)"
+        )
         if path:
             backup.export_all(self.db, path)
             show_toast(self, "整体备份完成")

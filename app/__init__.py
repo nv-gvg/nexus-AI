@@ -1,4 +1,4 @@
-"""AIWorkbench 应用包。"""
+"""Nexus-AI 应用包。"""
 
 from .application import create_application
 

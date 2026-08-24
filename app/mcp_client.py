@@ -43,12 +43,19 @@ def _extract_text(result: Any) -> str:
 
 
 class MCPClient:
-    """同步封装的多 MCP 服务器客户端。"""
+    """同步封装的多 MCP 服务器客户端。
+
+    支持三种传输方式：
+    - stdio：本地启动一个子进程作为 MCP 服务器
+    - sse/http：连接远程 MCP 服务器 URL
+    - builtin：在进程内直接加载工具模块（无需子进程，最可靠）
+    """
 
     def __init__(self, servers: list[dict[str, Any]]) -> None:
         self.servers = [s for s in servers if s.get("enabled", True)]
         self.log = get_logger()
         self._tool_to_server: dict[str, int] = {}
+        self._builtin_tools: dict[str, dict[str, Any]] = {}  # name -> {fn, etc}
 
     @property
     def enabled(self) -> bool:
@@ -58,7 +65,20 @@ class MCPClient:
         """返回 OpenAI tools 格式的工具列表（失败服务器自动跳过）。"""
         tools: list[dict[str, Any]] = []
         self._tool_to_server = {}
+        self._builtin_tools = {}
         for idx, server in enumerate(self.servers):
+            transport = self._transport(server)
+            if transport == "builtin":
+                try:
+                    bt = self._list_builtin_tools()
+                except Exception as exc:  # noqa: BLE001
+                    self.log.warning("内置 Agent 工具加载失败: %s", exc)
+                    continue
+                for t in bt:
+                    tools.append(t["openai_tool"])
+                    self._tool_to_server[t["name"]] = idx
+                    self._builtin_tools[t["name"]] = t
+                continue
             try:
                 raw_tools = _run_async(self._list_tools_for(server))
             except Exception as exc:  # noqa: BLE001
@@ -73,7 +93,11 @@ class MCPClient:
         idx = self._tool_to_server.get(tool_name)
         if idx is None:
             raise MCPError(f"工具 {tool_name} 不可用：对应 MCP 服务器未连接")
-        return _run_async(self._call_tool_on_server(self.servers[idx], tool_name, arguments))
+        server = self.servers[idx]
+        transport = self._transport(server)
+        if transport == "builtin":
+            return self._call_builtin_tool(tool_name, arguments)
+        return _run_async(self._call_tool_on_server(server, tool_name, arguments))
 
     # ------------------------------------------------------------------ 转换
     @staticmethod
@@ -156,3 +180,34 @@ class MCPClient:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments=arguments)
                 return _extract_text(result)
+
+    # ------------------------------------------------------------------ builtin（进程内加载工具，无需子进程）
+    def _list_builtin_tools(self) -> list[dict[str, Any]]:
+        """从 app.mcp_agent_server 模块加载内置工具。"""
+        from . import mcp_agent_server
+
+        result: list[dict[str, Any]] = []
+        for name, desc, params, _fn in mcp_agent_server.get_tools():
+            result.append(
+                {
+                    "name": name,
+                    "openai_tool": {
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "description": desc,
+                            "parameters": params,
+                        },
+                    },
+                }
+            )
+        return result
+
+    def _call_builtin_tool(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        """在进程内直接调用内置工具函数。"""
+        from . import mcp_agent_server
+
+        for name, _desc, _params, fn in mcp_agent_server.get_tools():
+            if name == tool_name:
+                return fn(**arguments)
+        raise MCPError(f"内置工具 {tool_name} 未找到")

@@ -1,7 +1,7 @@
-"""AIWorkbench 的 MCP 服务器。
+"""Nexus-AI 的 MCP 服务器。
 
 把本地的空间与知识图谱记忆以 MCP 工具形式暴露给其它 AI 客户端
-（Claude Desktop、Cursor、AIWorkbench 自身等）。
+（Claude Desktop、Cursor、Nexus-AI 自身等）。
 
 使用方法（stdio 传输，直接运行）：
     python mcp_server.py
@@ -22,7 +22,7 @@ from fastmcp import FastMCP  # noqa: E402
 from app import paths  # noqa: E402
 from app.database import Database  # noqa: E402
 
-mcp = FastMCP("AIWorkbench-Memory")
+mcp = FastMCP("Nexus-AI-Memory")
 
 
 def _db() -> Database:

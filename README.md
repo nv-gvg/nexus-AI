@@ -1,4 +1,4 @@
-# AIWorkbench
+# Nexus-AI
 
 一个**本地优先、完全开源**的桌面 AI 工作台。你可以创建多个独立「空间（Space）」，每个空间拥有独立的对话、知识图谱记忆和配置。
 
@@ -22,10 +22,10 @@
 
 ## 目录布局（用户数据）
 
-所有用户数据存储在 `%USERPROFILE%\Documents\AIWorkbench\`：
+所有用户数据存储在 `%USERPROFILE%\Documents\Nexus-AI\`：
 
 ```
-AIWorkbench/
+Nexus-AI/
 ├── data/      数据库 (aiworkbench.db)
 ├── backups/   每日自动备份
 ├── logs/      日志（按天切分，保留 30 天）
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-首次启动会弹出配置向导，填写 API Key、选择默认模型后进入主界面。
+首次启动会弹出配置向导（均可跳过），可自定义下载目录、选择是否接入 AI。
 
 > 默认使用 OpenAI 兼容接口，任何兼容 `/v1/chat/completions` 的服务（DeepSeek、Kimi、通义等）都可通过修改 Base URL 接入。
 
@@ -52,14 +52,14 @@ python main.py
 
 ```bash
 pip install pyinstaller
-pyinstaller AIWorkbench.spec
-# 产物为单文件 dist/AIWorkbench.exe
+pyinstaller Nexus-AI.spec
+# 产物为单文件 dist/Nexus-AI-<版本号>.exe
 ```
 
 ### 制作安装包（Inno Setup）
 
 1. 下载并安装 [Inno Setup](https://jrsoftware.org/isinfo.php)。
-2. 用 Inno Setup 打开并编译 `installer/AIWorkbench.iss`，生成 `AIWorkbench-Setup.exe`。
+2. 用 Inno Setup 打开并编译 `installer/Nexus-AI.iss`，生成 `Nexus-AI-Setup.exe`。
 
 ## 技能包格式（.skill）
 
@@ -87,7 +87,7 @@ my-skill.skill/
 
 ## MCP 支持
 
-AIWorkbench 既是 MCP **客户端**，也是 MCP **服务器**。
+Nexus-AI 既是 MCP **客户端**，也是 MCP **服务器**。
 
 ### 作为客户端（接入外部工具）
 
@@ -116,6 +116,61 @@ python mcp_server.py
 | `Enter` | 发送 |
 | `Shift+Enter` | 换行 |
 | `Esc` | 停止生成 |
+
+## 更新日志
+
+### v0.2.0
+
+**品牌升级 + 界面重构 + 启动提速**
+
+#### 🏷 品牌升级
+- 项目更名为 **Nexus-AI**（原 AIWorkbench），数据目录调整为 `%USERPROFILE%\Documents\Nexus-AI`
+
+#### 🎨 界面重构
+- **深色 / 浅色主题**：设置面板一键切换，立即生效并持久化
+- **主界面精简**：顶栏快捷按钮收进菜单栏（快捷键不变），聊天区更宽
+- **记忆图谱 / 技能 / 工作流**：从右侧标签页改为「查看」菜单 + 左侧导航图标独立窗口打开
+- **左侧侧边栏美化**：导航按钮加大圆角，面板标题带强调色竖条，全应用统一圆角与强调色
+- **聊天体验**：消息气泡按深浅色自适应，流式生成带闪烁光标
+
+#### 🌐 外部插件市场
+- 插件市场支持外部 JSON 地址（设置中可配置），后台加载，失败自动回退内置目录，离线可用
+
+#### ⚡ 启动提速
+- 打包精简：移除未使用的 `fastmcp` 及 torch / cv2 / pandas / scipy 等重库
+- 产物体积 **379MB → 55.7MB**，启动时间显著缩短
+
+#### 🚀 首次使用更友好
+- 开局向导不再强制输入 API Key / 模型，可跳过稍后再配置
+- 下载 / 导出目录可自定义，不再固定 C 盘
+
+### v0.1.2
+
+**核心更新：全新视觉设计 + MCP 生态支持**
+
+#### 🎨 全新视觉
+- **莫比乌斯环 Logo**：自适应系统主题配色（浅色→黑环，深色→白环）
+- **无限符号背景**：主内容区中央渲染半透明 ∞ 符号装饰
+- **深色主题**：完整的 QSS 样式表，覆盖所有控件
+- **重新设计的导航栏**：品牌标识 + 快捷操作 + 状态指示
+
+#### 🔌 MCP 生态支持
+- **作为 MCP 客户端**：支持 `stdio` 和 `sse` 两种传输方式，AI 自动调用外部工具
+- **作为 MCP 服务器**：开放 4 个记忆工具
+  - `list_spaces` - 列出所有空间
+  - `list_memory` - 获取指定空间的记忆节点
+  - `search_memory` - 关键词搜索记忆
+  - `add_memory` - 新增记忆条目
+
+#### 🛠 其他改进
+- 内置技能包：翻译官、代码助手、总结官 开箱即用
+- Bug 修复：修复窗口缩放时的递归渲染问题
+- 性能优化：背景渲染添加防抖保护
+
+### v0.0.1
+
+- 初始版本发布
+- 空间管理、对话、知识图谱记忆、技能包等核心功能
 
 ## 贡献
 

@@ -174,6 +174,34 @@ class APIClient:
             raise APIError(f"API 返回错误 {resp.status_code}: {resp.text[:500]}", resp.status_code)
         return resp.json()
 
+    def chat_text(self, messages: list[dict[str, str]], system_extra: str = "") -> str:
+        """非流式单次对话，返回纯文本回答（用于记忆总结、工作流执行等）。"""
+        keys = self.config.get_api_keys()
+        if not keys:
+            raise APIError("未配置 API Key，请先在配置面板中设置。")
+        history = self._build_messages(messages, system_extra)
+        payload: dict[str, Any] = {
+            "model": self.config.get("model", "gpt-4o-mini"),
+            "messages": history,
+            "temperature": float(self.config.get("temperature", 0.7)),
+            "top_p": float(self.config.get("top_p", 1.0)),
+            "stream": False,
+        }
+        last_err: APIError | None = None
+        for _ in range(len(keys)):
+            api_key = self.config.next_api_key()
+            if not api_key:
+                break
+            try:
+                data = self._post_once(api_key, payload)
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+            except APIError as exc:
+                last_err = exc
+                if exc.status_code in (400, 401, 403):
+                    raise exc
+                continue
+        raise last_err or APIError("所有 API Key 均已失败")
+
     def _run_tool_loop(
         self,
         messages: list[dict[str, str]],

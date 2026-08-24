@@ -7,6 +7,7 @@ from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
 
 from .. import paths
+from app.ui import theme
 from .mobius import make_logo
 
 
@@ -40,7 +41,7 @@ class AboutDialog(QDialog):
         link_btn = QPushButton(paths.GITHUB_REPO)
         link_btn.setFlat(True)
         link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        link_btn.setStyleSheet("color: #7b8cff;")
+        link_btn.setStyleSheet(f"color: {theme.current().accent};")
         link_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(paths.GITHUB_REPO)))
         layout.addWidget(link_btn)
 

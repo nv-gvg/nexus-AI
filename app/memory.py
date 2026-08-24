@@ -73,6 +73,104 @@ def copy_node_to_space(
     return new_node["id"]
 
 
+def node_text(node: dict[str, Any]) -> str:
+    """提取节点的文本内容（记忆或标签），用于拼接/总结。"""
+    meta = node.get("metadata", {}) or {}
+    memory_text = meta.get("memory", "") or ""
+    return memory_text or node.get("label", "") or ""
+
+
+def merge_nodes(
+    db: Database, space_id: str, node_ids: list[str], label: str | None = None
+) -> dict[str, Any] | None:
+    """把多个记忆节点拼接并合并为一条新节点，删除原有节点及其关联边。
+
+    返回新节点；若没有有效节点返回 None。
+    """
+    nodes = [db.get_memory_node(nid) for nid in node_ids]
+    nodes = [n for n in nodes if n is not None]
+    if not nodes:
+        return None
+
+    combined = "\n".join(f"- {node_text(n)}" for n in nodes).strip()
+    new_label = label or "·".join((node.get("label") or "")[:12] for node in nodes[:3]) or "合并记忆"
+    if len(new_label) > 80:
+        new_label = new_label[:80]
+
+    new_node = db.add_memory_node(
+        space_id=space_id,
+        label=new_label,
+        node_type="concept",
+        metadata={"memory": combined, "merged": True, "source_ids": node_ids},
+    )
+
+    # 删除被合并的节点及其边
+    for nid in node_ids:
+        db.delete_memory_node(nid)
+
+    # 把原节点指向外部的关系重新指向新节点（简单处理：复制指向本空间其他节点的边）
+    return new_node
+
+
+def summarize_nodes(
+    db: Database, space_id: str, node_ids: list[str], summary: str
+) -> dict[str, Any] | None:
+    """用 AI 生成的总结创建一个「概念」节点，并保留原节点。"""
+    nodes = [db.get_memory_node(nid) for nid in node_ids]
+    nodes = [n for n in nodes if n is not None]
+    if not nodes or not summary.strip():
+        return None
+    text = "\n".join(f"- {node_text(n)}" for n in nodes).strip()
+    summary_text = f"【AI 总结】{summary.strip()}\n\n原始素材:\n{text}"
+    return db.add_memory_node(
+        space_id=space_id,
+        label=(summary.strip()[:80] or "AI 总结"),
+        node_type="concept",
+        metadata={"memory": summary_text, "ai_summary": True, "source_ids": node_ids},
+    )
+
+
+# 自动记忆阈值：每累计 N 轮（用户消息 = 1 轮）触发一次 AI 自动总结
+AUTO_MEMORY_ROUNDS = 3
+
+
+def should_auto_summarize(db: Database, space_id: str) -> bool:
+    """判断空间是否需要触发一次自动记忆总结。
+
+    规则：当前空间 user 消息数达到 AUTO_MEMORY_ROUNDS 的整数倍时，
+    且本次并非刚总结过（避免重复触发）。
+    """
+    if not space_id:
+        return False
+    count = db.count_user_messages(space_id)
+    if count < AUTO_MEMORY_ROUNDS or count % AUTO_MEMORY_ROUNDS != 0:
+        return False
+    # 取最近一次自动总结消费到的 user 消息数
+    last = db.last_auto_memory_count(space_id)
+    return count > last
+
+
+def auto_material(db: Database, space_id: str) -> str:
+    """提取最近几轮对话作为 AI 自动总结的原始素材（文本，含角色标记）。"""
+    msgs = db.recent_turn_payload(space_id, limit=AUTO_MEMORY_ROUNDS * 2)
+    return "\n".join(f"[{m['role']}] {m['content']}" for m in msgs).strip()
+
+
+def save_auto_summary(db: Database, space_id: str, summary: str) -> dict[str, Any] | None:
+    """把 AI 自动总结结果保存成一个「概念」记忆节点，并推进自动记忆游标。"""
+    if not space_id or not summary or summary.startswith("总结失败"):
+        return None
+    payload = f"【AI 自动记忆】{summary.strip()}"
+    node = db.add_memory_node(
+        space_id=space_id,
+        label=(summary.strip()[:80] or "自动记忆"),
+        node_type="concept",
+        metadata={"memory": payload, "auto_summary": True},
+    )
+    db.record_auto_memory_count(space_id)
+    return node
+
+
 def simplify_graph(graph: dict[str, Any], max_nodes: int = 100) -> dict[str, Any]:
     """节点超过 max_nodes 时简化：仅保留前 max_nodes 个节点及它们之间的边。"""
     nodes = graph.get("nodes", [])

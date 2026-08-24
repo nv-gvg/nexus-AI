@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS memory_edges (
     target_node_id TEXT NOT NULL,
     relation_type TEXT
 );
+CREATE TABLE IF NOT EXISTS space_meta (
+    space_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY(space_id, key)
+);
 CREATE INDEX IF NOT EXISTS idx_conversations_space ON conversations(space_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_memory_nodes_space ON memory_nodes(space_id);
@@ -82,8 +88,8 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self.log = get_logger()
-        self._connect().executescript(_SCHEMA)
-        self._connect().close()
+        with self._connect() as conn:
+            conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -189,6 +195,48 @@ class Database:
             "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
             (conversation_id,),
         )
+
+    # ------------------------------------------------------------------ 空间元数据（自动记忆游标等）
+    def get_space_meta(self, space_id: str, key: str) -> str | None:
+        row = self._query_one(
+            "SELECT value FROM space_meta WHERE space_id = ? AND key = ?",
+            (space_id, key),
+        )
+        return row["value"] if row else None
+
+    def set_space_meta(self, space_id: str, key: str, value: str) -> None:
+        self._exec(
+            "INSERT INTO space_meta (space_id, key, value) VALUES (?, ?, ?) "
+            "ON CONFLICT(space_id, key) DO UPDATE SET value = excluded.value",
+            (space_id, key, value),
+        )
+
+    def count_user_messages(self, space_id: str) -> int:
+        row = self._query_one(
+            "SELECT COUNT(*) AS n FROM messages m "
+            "JOIN conversations c ON m.conversation_id = c.id "
+            "WHERE c.space_id = ? AND m.role = 'user'",
+            (space_id,),
+        )
+        return int(row["n"]) if row else 0
+
+    def last_auto_memory_count(self, space_id: str) -> int:
+        val = self.get_space_meta(space_id, "auto_memory_count")
+        return int(val) if val and val.isdigit() else 0
+
+    def record_auto_memory_count(self, space_id: str) -> None:
+        self.set_space_meta(space_id, "auto_memory_count", str(self.count_user_messages(space_id)))
+
+    def recent_turn_payload(self, space_id: str, limit: int = 6) -> list[dict[str, Any]]:
+        """取空间最近一组消息（按时间倒序取 limit 条，再正序返回），用于自动总结。"""
+        rows = self._query(
+            "SELECT m.role, m.content FROM messages m "
+            "JOIN conversations c ON m.conversation_id = c.id "
+            "WHERE c.space_id = ? ORDER BY m.created_at DESC LIMIT ?",
+            (space_id, limit),
+        )
+        rows.reverse()
+        return rows
 
     # ------------------------------------------------------------------ 记忆节点
     def add_memory_node(

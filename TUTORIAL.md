@@ -1,6 +1,6 @@
-# AIWorkbench 使用教程
+# Nexus-AI 使用教程
 
-本教程带你从零开始，学会使用 AIWorkbench 的全部核心功能。
+本教程带你从零开始，学会使用 Nexus-AI 的全部核心功能。
 
 ## 目录
 
@@ -23,7 +23,7 @@
 
 ### 方式 A：直接运行 exe（推荐新手）
 
-项目根目录有打包好的 `AIWorkbench.exe`，双击即可运行，无需安装 Python。
+项目根目录有打包好的 `Nexus-AI.exe`，双击即可运行，无需安装 Python。
 
 ### 方式 B：从源码运行
 
@@ -43,7 +43,7 @@ python main.py
 1. 双击运行后，程序会自动在你的 `文档` 目录创建数据文件夹：
 
 ```
-C:\Users\你的用户名\Documents\AIWorkbench\
+C:\Users\你的用户名\Documents\Nexus-AI\
 ├── data\      数据库
 ├── backups\   每日备份
 ├── logs\      日志（保留 30 天）
@@ -264,17 +264,17 @@ Compress-Archive -Path manifest.json, prompt.txt -DestinationPath 翻译官.skil
 
 ```bash
 pip install pyinstaller
-pyinstaller AIWorkbench.spec
-# 产物：dist\AIWorkbench.exe（单文件）
+pyinstaller Nexus-AI.spec
+# 产物：dist\Nexus-AI.exe（单文件）
 ```
 
 ### 制作安装包（Inno Setup）
 
 1. 安装 [Inno Setup](https://jrsoftware.org/isinfo.php)。
-2. 用 Inno Setup 打开 `installer\AIWorkbench.iss` 并编译。
-3. 生成 `output\AIWorkbench-Setup-0.1.1.exe`。
+2. 用 Inno Setup 打开 `installer\Nexus-AI.iss` 并编译。
+3. 生成 `output\Nexus-AI-Setup-0.1.1.exe`。
 
-> 默认安装目录已配置为 `D:\AIWorkbench`，可在 `.iss` 文件的 `DefaultDirName` 修改。
+> 默认安装目录已配置为 `D:\Nexus-AI`，可在 `.iss` 文件的 `DefaultDirName` 修改。
 
 ---
 
@@ -287,7 +287,7 @@ A：你还没填 Key。按 `Ctrl+,` 打开配置面板，添加 API Key 并保�
 A：检查 Base URL 是否正确、Key 是否有效、网络是否能访问对方服务。
 
 **Q：数据存在哪里？会不会上传？**
-A：数据全部保存在本地 `Documents\AIWorkbench\`，不会上传到你的机器之外。API Key 用 Fernet 加密后存储。
+A：数据全部保存在本地 `Documents\Nexus-AI\`，不会上传到你的机器之外。API Key 用 Fernet 加密后存储。
 
 **Q：换电脑怎么迁移数据？**
 A：用「文件 → 整体备份 (ZIP)」，在新电脑「整体恢复 (ZIP)」即可。
@@ -299,7 +299,7 @@ A：程序启动时自动检查 GitHub Releases，右下角弹窗提示，点击
 
 ## 十三、MCP 工具扩展
 
-AIWorkbench 既是 MCP 客户端，也可作为 MCP 服务器。
+Nexus-AI 既是 MCP 客户端，也可作为 MCP 服务器。
 
 ### 接入外部工具（MCP 客户端）
 

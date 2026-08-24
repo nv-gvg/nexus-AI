@@ -13,11 +13,20 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from . import theme
+
 def show_toast(parent: QWidget, text: str, success: bool = True, duration_ms: int = 2500) -> None:
-    """在父窗口右下角显示提示条。"""
+    """在父窗口右下角显示提示条。
+
+    注意：toast 使用自身持有的 QTimer 自动关闭并 deleteLater，
+    避免依赖 QTimer.singleShot 的回调引用到可能会提前销毁的 parent。
+    """
     toast = Toast(parent, text, success)
     toast.show()
-    QTimer.singleShot(duration_ms, toast.close)
+    toast._timer = QTimer(toast)
+    toast._timer.setSingleShot(True)
+    toast._timer.timeout.connect(toast._auto_close)
+    toast._timer.start(duration_ms)
 
 
 class Toast(QLabel):
@@ -41,6 +50,11 @@ class Toast(QLabel):
             y = parent.height() - self.height() - 24
             self.move(x, y)
 
+    def _auto_close(self) -> None:
+        """由自身 QTimer 触发，安全关闭并回收，不担心 parent 已销毁。"""
+        self.hide()
+        self.deleteLater()
+
 
 class JumpingDots(QWidget):
     """AI 回复时的跳动点动画。"""
@@ -53,7 +67,7 @@ class JumpingDots(QWidget):
         self._dots = []
         for _ in range(3):
             dot = QLabel("●")
-            dot.setStyleSheet("color: #3a3f49; font-size: 14px;")
+            dot.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 14px;")
             layout.addWidget(dot)
             self._dots.append(dot)
         self._step = 0
@@ -64,7 +78,9 @@ class JumpingDots(QWidget):
     def _tick(self) -> None:
         for i, dot in enumerate(self._dots):
             active = (i == self._step)
-            dot.setStyleSheet(f"color: {'#e7e9ee' if active else '#3a3f49'}; font-size: 14px;")
+            dot.setStyleSheet(
+                f"color: {theme.ACCENT if active else theme.TEXT_DIM}; font-size: 14px;"
+            )
         self._step = (self._step + 1) % 3
 
     def stop(self) -> None:
@@ -84,31 +100,22 @@ class MessageWidget(QFrame):
         self.message_id = message_id
         self.role = role
         self.created_at = created_at
-
-        is_user = role == "user"
-        bg = "#25324a" if is_user else "#1b1e26"
-        align = Qt.AlignmentFlag.AlignRight if is_user else Qt.AlignmentFlag.AlignLeft
+        self._blink_on = False
+        self._cursor_timer: QTimer | None = None
+        self._is_user = role == "user"
 
         self.setObjectName("messageWidget")
-        self.setStyleSheet(
-            f"#messageWidget {{ background: {bg}; border: 1px solid #2a2e37;"
-            " border-radius: 8px; }}"
-        )
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 8, 12, 8)
+        outer.setContentsMargins(14, 10, 14, 10)
         outer.setSpacing(6)
 
         header = QHBoxLayout()
-        role_label = QLabel("你" if is_user else "AI")
-        role_label.setStyleSheet(
-            f"font-weight: bold; color: {'#8fb3ff' if is_user else '#7dd0a0'};"
-        )
-        header.addWidget(role_label)
+        self._role_label = QLabel("你" if self._is_user else "AI")
+        header.addWidget(self._role_label)
         header.addStretch(1)
-        time_label = QLabel(created_at)
-        time_label.setStyleSheet("color: #7c828c; font-size: 11px;")
-        header.addWidget(time_label)
+        self._time_label = QLabel(created_at)
+        header.addWidget(self._time_label)
         outer.addLayout(header)
 
         self.content_label = QLabel(content)
@@ -116,9 +123,9 @@ class MessageWidget(QFrame):
         self.content_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.content_label.setStyleSheet("color: #e7e9ee; font-size: 14px;")
         self.content_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         outer.addWidget(self.content_label)
+        self._content_label = self.content_label
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
@@ -133,7 +140,7 @@ class MessageWidget(QFrame):
         del_btn.clicked.connect(lambda: self.delete_requested.emit(self.message_id))
         btn_row.addWidget(copy_btn)
         btn_row.addWidget(mem_btn)
-        if is_user:
+        if self._is_user:
             edit_btn = QPushButton("编辑")
             edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             edit_btn.clicked.connect(lambda: self.edit_requested.emit(self.message_id))
@@ -142,12 +149,74 @@ class MessageWidget(QFrame):
         outer.addLayout(btn_row)
 
         self._outer_align_wrapper = None
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        """按当前主题应用气泡配色（构造与换肤时调用）。"""
+        is_user = self._is_user
+        bubble_bg = theme.ACCENT_DARK if is_user else theme.SURFACE_2
+        border = theme.ACCENT_DARK if is_user else theme.BORDER
+        content_color = theme.TEXT_BRIGHT if is_user else theme.TEXT
+        self._content_color = content_color
+        self.setStyleSheet(
+            f"#messageWidget {{ background: {bubble_bg}; border: 1px solid {border};"
+            f" border-radius: 12px; }}"
+        )
+        self._role_label.setStyleSheet(
+            f"font-weight: bold; color: {theme.ACCENT if is_user else theme.TEXT_GREEN};"
+        )
+        self._time_label.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 11px;")
+        self._content_label.setStyleSheet(f"color: {content_color}; font-size: 14px;")
+
+    def refresh_theme(self) -> None:
+        """主题切换后刷新气泡颜色。"""
+        self._apply_theme()
 
     def append_text(self, delta: str) -> None:
-        self.content_label.setText(self.content_label.text() + delta)
+        text = self.content_label.text()
+        cursor = "▋"
+        if text.endswith(cursor):
+            # 在闪烁光标前插入新内容，随后光标回到末尾
+            self.content_label.setText(text[:-1] + delta + cursor)
+        else:
+            self.content_label.setText(text + delta)
 
     def set_content(self, text: str) -> None:
         self.content_label.setText(text)
 
     def content(self) -> str:
         return self.content_label.text()
+
+    def start_typing_cursor(self) -> None:
+        """显示流式输入的闪烁光标。"""
+        if self._cursor_timer is None:
+            self._cursor_timer = QTimer(self)
+            self._cursor_timer.timeout.connect(self._blink)
+            self._cursor_timer.start(400)
+            self._blink(force_on=True)
+
+    def stop_typing_cursor(self) -> None:
+        """移除闪烁光标。"""
+        if self._cursor_timer:
+            self._cursor_timer.stop()
+            self._cursor_timer = None
+        self._update_cursor(False)
+
+    def _blink(self, force_on: bool | None = None) -> None:
+        if force_on is True:
+            self._blink_on = True
+        elif force_on is False:
+            self._blink_on = False
+        else:
+            self._blink_on = not self._blink_on
+        self._update_cursor(self._blink_on)
+
+    def _update_cursor(self, visible: bool) -> None:
+        text = self.content_label.text()
+        cursor = "▋"
+        if visible:
+            if not text.endswith(cursor):
+                self.content_label.setText(text + cursor)
+        else:
+            if text.endswith(cursor):
+                self.content_label.setText(text[:-1])

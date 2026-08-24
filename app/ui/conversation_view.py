@@ -23,7 +23,8 @@ from .. import memory
 from ..api_client import APIClient, estimate_tokens
 from ..config import get_config
 from ..skills import SkillManager
-from ..workers import ChatThread
+from ..workers import AutoMemoryThread, ChatThread
+from app.ui import theme
 from .mobius import render_infinity_background
 from .widgets import JumpingDots, MessageWidget, show_toast
 
@@ -40,6 +41,13 @@ class InfinityBackground(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
+        self._render()
+
+    def refresh(self) -> None:
+        """主题切换后按当前主题重绘背景。"""
+        self._render()
+
+    def _render(self) -> None:
         if self._generating:
             return
         w, h = self.width(), self.height()
@@ -81,6 +89,7 @@ class ConversationListView(QWidget):
 
     def __init__(self, db, parent=None) -> None:
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.db = db
         self.space_id: str | None = None
 
@@ -147,6 +156,7 @@ class ChatView(QWidget):
 
     def __init__(self, db, parent=None) -> None:
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.db = db
         self.config = get_config()
         self.client = APIClient()
@@ -165,6 +175,7 @@ class ChatView(QWidget):
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
+        self._apply_self_bg()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
@@ -179,7 +190,9 @@ class ChatView(QWidget):
         self.gen_dots.setVisible(False)
         top.addWidget(self.gen_dots)
         self.token_label = QLabel("Tokens: 0")
-        self.token_label.setStyleSheet("color: #7c828c; font-size: 12px;")
+        self.token_label.setStyleSheet(
+            f"color: {theme.current().text_dim}; font-size: 12px;"
+        )
         top.addWidget(self.token_label)
         self.memory_btn = QPushButton("保存记忆")
         self.memory_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -189,6 +202,8 @@ class ChatView(QWidget):
 
         # 消息区域容器（包含无限符号背景）
         self.msg_area = QWidget()
+        self.msg_area.setObjectName("msgArea")
+        self._apply_msg_area_bg()
         msg_area_layout = QVBoxLayout(self.msg_area)
         msg_area_layout.setContentsMargins(0, 0, 0, 0)
         msg_area_layout.setSpacing(0)
@@ -202,12 +217,16 @@ class ChatView(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollArea > QWidget > QWidget { background: transparent; }"
+        )
+        self.scroll.viewport().setStyleSheet("background: transparent;")
         self.msg_container = QWidget()
         self.msg_container.setStyleSheet("QWidget { background: transparent; }")
         self.msg_layout = QVBoxLayout(self.msg_container)
-        self.msg_layout.setContentsMargins(12, 8, 12, 8)
-        self.msg_layout.setSpacing(10)
+        self.msg_layout.setContentsMargins(16, 10, 16, 8)
+        self.msg_layout.setSpacing(12)
         self.msg_layout.addStretch(1)
         self.scroll.setWidget(self.msg_container)
 
@@ -221,16 +240,19 @@ class ChatView(QWidget):
 
         self.input = QTextEdit()
         self.input.setPlaceholderText("输入消息，Shift+Enter 换行，Enter 发送")
-        self.input.setFixedHeight(72)
+        self.input.setFixedHeight(92)
         self.input.installEventFilter(self)
         input_layout.addWidget(self.input)
 
         btn_row = QHBoxLayout()
         self.hint_label = QLabel("")
-        self.hint_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self.hint_label.setStyleSheet(
+            f"color: {theme.current().text_dim}; font-size: 12px;"
+        )
         btn_row.addWidget(self.hint_label)
         btn_row.addStretch(1)
         self.send_btn = QPushButton("发送")
+        self.send_btn.setObjectName("accentBtn")
         self.send_btn.setFixedWidth(90)
         self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_btn.clicked.connect(self.on_send_clicked)
@@ -249,12 +271,51 @@ class ChatView(QWidget):
             self.infinity_bg.setGeometry(self.msg_area.rect())
             self.infinity_bg.lower()
 
+    def _apply_msg_area_bg(self) -> None:
+        """给消息区域容器应用主题背景色，避免透明透出黑色。"""
+        t = theme.current()
+        self.msg_area.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.msg_area.setStyleSheet(
+            f"QWidget#msgArea {{ background: {t.surface}; border: none; }}"
+        )
+
+    def _apply_self_bg(self) -> None:
+        """ChatView 自身应用主题背景色。"""
+        t = theme.current()
+        self.setStyleSheet(
+            f"QWidget#chatView {{ background: {t.bg}; }}"
+        )
+        self.setObjectName("chatView")
+
+    def refresh_theme(self) -> None:
+        """主题切换后刷新聊天区配色。"""
+        self._apply_self_bg()
+        self._apply_msg_area_bg()
+        self.token_label.setStyleSheet(
+            f"color: {theme.current().text_dim}; font-size: 12px;"
+        )
+        self.hint_label.setStyleSheet(
+            f"color: {theme.current().text_dim}; font-size: 12px;"
+        )
+        if getattr(self, "_empty_label", None) is not None:
+            self._empty_label.setStyleSheet(
+                f"color: {theme.current().text_dim}; font-size: 15px;"
+            )
+        for i in range(self.msg_layout.count()):
+            item = self.msg_layout.itemAt(i)
+            w = item.widget()
+            if isinstance(w, MessageWidget):
+                w.refresh_theme()
+        self.infinity_bg.refresh()
+
     # ------------------------------------------------------------------ 空状态/加载
     def show_empty_state(self, text: str) -> None:
         self._clear_messages()
         label = QLabel(text)
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("color: #8b92a0; font-size: 15px;")
+        label.setStyleSheet(
+            f"color: {theme.current().text_dim}; font-size: 15px;"
+        )
         self.msg_layout.insertWidget(0, label)
         self._empty_label = label
 
@@ -359,9 +420,9 @@ class ChatView(QWidget):
     def _start_stream(self, history: list[dict[str, str]], system_extra: str) -> None:
         self.streaming = True
         self.send_btn.setText("停止")
-        self.send_btn.setStyleSheet(
-            "background-color: #d32f2f; color: white; border: none; border-radius: 4px; padding: 4px;"
-        )
+        self.send_btn.setObjectName("dangerBtn")
+        self.send_btn.style().unpolish(self.send_btn)
+        self.send_btn.style().polish(self.send_btn)
         self.gen_dots.setVisible(True)
 
         # 占位 assistant 气泡
@@ -372,6 +433,7 @@ class ChatView(QWidget):
             "created_at": "",
         }
         self.stream_widget = self._append_message_widget(placeholder)
+        self.stream_widget.start_typing_cursor()
         self._scroll_to_bottom()
 
         self.thread = ChatThread(self.client, history, system_extra, self)
@@ -395,9 +457,13 @@ class ChatView(QWidget):
         self.streaming = False
         self.gen_dots.setVisible(False)
         self.send_btn.setText("发送")
-        self.send_btn.setStyleSheet("")
+        self.send_btn.setObjectName("accentBtn")
+        self.send_btn.style().unpolish(self.send_btn)
+        self.send_btn.style().polish(self.send_btn)
         self.thread = None
 
+        if self.stream_widget:
+            self.stream_widget.stop_typing_cursor()
         has_content = bool(self.stream_widget and self.stream_widget.content().strip())
 
         if full_text is not None:
@@ -421,10 +487,16 @@ class ChatView(QWidget):
         self.stream_widget = None
         self.update_token_usage()
 
+        # AI 自动记忆：每几轮对话后台自动总结一次，非手动
+        if full_text is not None and self.space_id:
+            self._trigger_auto_memory()
+
         if error:
             show_toast(self, f"调用失败: {error}", success=False)
             err_label = QLabel(f"错误: {error}")
-            err_label.setStyleSheet("color: #ff6b6b; font-size: 13px;")
+            err_label.setStyleSheet(
+                f"color: {theme.current().danger}; font-size: 13px;"
+            )
             self.msg_layout.insertWidget(self.msg_layout.count() - 1, err_label)
             self._scroll_to_bottom()
 
@@ -497,6 +569,36 @@ class ChatView(QWidget):
             show_toast(self, "还没有可保存的消息", success=False)
             return
         self._attach_memory_to_message(msgs[-1]["id"])
+
+    # ------------------------------------------------------------------ AI 自动记忆
+    def _trigger_auto_memory(self) -> None:
+        """每累计几轮对话自动在后台总结一次记忆，非手动。
+
+        幂等：只有达成新一轮阈值且未消费过才会触发。
+        """
+        if not memory.should_auto_summarize(self.db, self.space_id):
+            return
+        material = memory.auto_material(self.db, self.space_id)
+        if not material:
+            return
+        if getattr(self, "_auto_memory_running", False):
+            return
+        self._auto_memory_running = True
+        thread = AutoMemoryThread(self.db, self.space_id, material, self)
+        self._auto_memory_thread = thread
+
+        def _on_done(node) -> None:
+            self._auto_memory_running = False
+            if node:
+                show_toast(self, "AI 已自动记忆本轮对话")
+                self.graph_refresh_requested.emit()
+
+        def _on_failed(_err: str) -> None:
+            self._auto_memory_running = False
+
+        thread.done.connect(_on_done)
+        thread.failed.connect(_on_failed)
+        thread.start()
 
     # ------------------------------------------------------------------ 键盘
     def eventFilter(self, obj, event) -> bool:  # noqa: N802

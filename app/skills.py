@@ -145,21 +145,21 @@ BUILTIN_SKILLS: list[dict[str, Any]] = [
         "name": "翻译官",
         "version": "1.0.0",
         "description": "中英互译助手",
-        "author": "AIWorkbench",
+        "author": "Nexus-AI",
         "prompt": "你是一名专业翻译。用户输入中文就翻译成英文，输入英文就翻译成中文。只输出译文，不要额外解释。",
     },
     {
         "name": "代码助手",
         "version": "1.0.0",
         "description": "编写、解释、调试代码",
-        "author": "AIWorkbench",
+        "author": "Nexus-AI",
         "prompt": "你是一名资深程序员。帮用户编写、解释和调试代码，给出可直接运行的代码并简要说明关键思路，优先使用用户指定的语言。",
     },
     {
         "name": "总结官",
         "version": "1.0.0",
         "description": "把长文本提炼成要点",
-        "author": "AIWorkbench",
+        "author": "Nexus-AI",
         "prompt": "你是一名总结专家。把用户提供的长文本提炼成简洁、条理清晰的要点，可用列表或分点呈现，保留关键信息、删除冗余。",
     },
 ]
@@ -179,6 +179,117 @@ def _write_skill(target: Path, spec: dict[str, Any]) -> None:
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     (target / "prompt.txt").write_text(spec.get("prompt", ""), encoding="utf-8")
+
+
+# ------------------------------------------------------------------ 插件市场
+# 精选可一键安装的插件包（本应用内置插件市场，离线可用）。
+# 若环境联网，下拉脚本会尝试从远程 GitHub 目录合并更新；失败则使用本地目录。
+MARKET_PLUGINS: list[dict[str, Any]] = [
+    {
+        "name": "写作润色",
+        "version": "1.0.0",
+        "description": "把写得一般的文字改成流畅、优雅的表达",
+        "author": "Nexus-AI 插件市场",
+        "prompt": "你是一名资深文字编辑。请对用户输入进行润色：修正语病、搭配、标点，让表达更流畅自然，保持原意，不改变结构和长度，只输出改写后的文本。",
+    },
+    {
+        "name": "英语老师",
+        "version": "1.0.0",
+        "description": "讲解英语语法、搭配并给出例句练习",
+        "author": "Nexus-AI 插件市场",
+        "prompt": "你是一名温柔的英语老师。针对用户的问题用中文讲解，必要时给英文例句和针对性小练习，语言生动易懂。",
+    },
+    {
+        "name": "数学解题",
+        "version": "1.0.0",
+        "description": "分步讲解数学题并给出解题思路",
+        "author": "Nexus-AI 插件市场",
+        "prompt": "你是一名数学老师。请把题目分步讲解清楚，写出解题思路和公式，最后给出答案，并用通俗语言解释每一步。",
+    },
+    {
+        "name": "演讲稿助手",
+        "version": "1.0.0",
+        "description": "根据主题生成有感染力、结构清晰的演讲稿",
+        "author": "Nexus-AI 插件市场",
+        "prompt": "你是一名演讲教练。请根据用户给出的主题和场合，写一篇结构清晰、有感染力、口语化的演讲稿，包含开场、主体和结尾，并标出停顿点。",
+    },
+    {
+        "name": "代码解释器",
+        "version": "1.0.0",
+        "description": "逐行解释代码并说明运行逻辑",
+        "author": "Nexus-AI 插件市场",
+        "prompt": "你是一名耐心讲解的老师。请逐段解释用户给出的代码：先概括整体作用，再解释每一部分的功能和语法，最后指出潜在问题。",
+    },
+    {
+        "name": "学习计划师",
+        "version": "1.0.0",
+        "description": "根据目标制定可执行的每日学习计划",
+        "author": "Nexus-AI 插件市场",
+        "prompt": "你是一名学习规划师。请根据用户的目标、每天可投入时间和水平，制定一份具体、可执行、有复习节奏的学习计划，按天/S 安排，并给出里程碑。",
+    },
+]
+
+
+def market_catalog(remote: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """返回插件市场可安装的插件目录。
+
+    若传入可用的远程目录则优先返回远程目录（附加标记 source="remote"），
+    否则回退到本地内置目录，保证离线可用。
+    """
+    if remote:
+        result = []
+        for spec in remote:
+            item = dict(spec)
+            item.setdefault("source", "remote")
+            result.append(item)
+        return result
+    return [dict(spec) for spec in MARKET_PLUGINS]
+
+
+def fetch_remote_market(url: str, timeout: float = 8.0) -> list[dict[str, Any]] | None:
+    """从外部市场 URL 拉取插件目录（JSON 数组），失败返回 None。
+
+    每项需含 name/version/description/prompt（author 可选）。
+    """
+    if not url or not url.strip():
+        return None
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            url.strip(),
+            headers={"User-Agent": "Nexus-AI/0.3.0"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            payload = json.loads(resp.read().decode("utf-8"))
+        if not isinstance(payload, list):
+            return None
+        specs = []
+        for item in payload:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            item.setdefault("version", "1.0.0")
+            item.setdefault("description", "")
+            item.setdefault("author", "外部插件市场")
+            item.setdefault("prompt", "")
+            specs.append(item)
+        return specs or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def install_market_plugin(spec: dict[str, Any], enable: bool = True) -> None:
+    """把插件市场中的一项写成本地技能包，并按需启用。"""
+    from .config import get_config
+
+    name = spec.get("name", "")
+    if not name:
+        raise ValueError("插件缺少名称")
+    target = paths.skills_dir() / name
+    _write_skill(target, spec)
+    if enable:
+        get_config().enable_skill(name)
+    get_logger().info("已安装插件市场技能: %s", name)
 
 
 def install_builtin_skills(config=None) -> list[str]:

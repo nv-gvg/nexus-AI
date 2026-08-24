@@ -29,7 +29,13 @@ _DEFAULTS: dict[str, Any] = {
     "close_to_tray": True,
     "check_updates": True,
     "setup_completed": False,
+    # 界面主题："dark"（深色）或 "light"（浅色）
+    "theme": "light",
+    # 外部插件市场地址（JSON 数组；留空则使用内置目录）
+    "market_url": "",
     "enabled_skills": [],
+    # 下载/导出目录（为空时使用系统“文档”目录）
+    "download_dir": "",
     # MCP 服务器列表（每项含 name/transport/command/args/url）
     "mcp_servers": [],
     # 加密后的 API Key 列表（base64 字符串）
@@ -38,22 +44,33 @@ _DEFAULTS: dict[str, Any] = {
 
 
 def builtin_mcp_servers() -> list[dict[str, Any]]:
-    """内置 MCP 服务器：把本地记忆/图谱以 MCP 工具形式开放给自己的客户端。
+    """内置 MCP 服务器：本地记忆 + Agent 工具集。
 
-    仅在源码运行时可用（打包成 exe 后无独立 python 解释器运行 mcp_server.py）。
+    - 本地记忆：以 MCP 工具形式开放记忆读写（仅源码运行时可用）
+    - Agent 工具：进程内加载，提供命令执行/文件读写/网页搜索等基础能力（源码和 EXE 都可用）
     """
-    if paths.is_frozen():
-        return []
-    return [
+    servers: list[dict[str, Any]] = [
+        # Agent 工具集：使用 builtin 传输，进程内直接加载，无需子进程
         {
-            "name": "本地记忆",
-            "transport": "stdio",
-            "command": sys.executable,
-            "args": [str(paths.resource_path("mcp_server.py"))],
+            "name": "Agent 工具",
+            "transport": "builtin",
             "enabled": True,
             "builtin": True,
-        }
+        },
     ]
+    # 本地记忆 MCP 服务器（仅源码可用，EXE 无独立 Python 解释器）
+    if not paths.is_frozen():
+        servers.append(
+            {
+                "name": "本地记忆",
+                "transport": "stdio",
+                "command": sys.executable,
+                "args": [str(paths.resource_path("mcp_server.py"))],
+                "enabled": True,
+                "builtin": True,
+            }
+        )
+    return servers
 
 
 class Config:
@@ -198,6 +215,21 @@ class Config:
     def enabled_skills(self) -> list[str]:
         with self._lock:
             return list(self._data.get("enabled_skills", []))
+
+    # ------------------------------------------------------------------ 下载/导出目录
+    def download_dir(self) -> str:
+        """返回下载/导出目录。未设置时使用系统的“下载/文档”目录。"""
+        with self._lock:
+            configured = self._data.get("download_dir", "")
+        if configured:
+            return configured
+        docs = Path.home() / "Documents"
+        return str(docs if docs.exists() else Path.home())
+
+    def set_download_dir(self, directory: str) -> None:
+        with self._lock:
+            self._data["download_dir"] = (directory or "").strip()
+            self.save()
 
     # ------------------------------------------------------------------ MCP 服务器
     def get_mcp_servers(self) -> list[dict[str, Any]]:

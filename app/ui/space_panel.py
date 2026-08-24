@@ -23,6 +23,7 @@ class SpacePanel(QWidget):
 
     def __init__(self, db, parent=None) -> None:
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.db = db
         self.current_space_id: str | None = None
 
